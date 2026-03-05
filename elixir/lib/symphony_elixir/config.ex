@@ -50,7 +50,7 @@ defmodule SymphonyElixir.Config do
                                default: %{},
                                keys: [
                                  kind: [type: {:or, [:string, nil]}, default: nil],
-                                 endpoint: [type: :string, default: @default_linear_endpoint],
+                                 endpoint: [type: {:or, [:string, nil]}, default: nil],
                                  api_key: [type: {:or, [:string, nil]}, default: nil],
                                  project_slug: [type: {:or, [:string, nil]}, default: nil],
                                  assignee: [type: {:or, [:string, nil]}, default: nil],
@@ -185,7 +185,7 @@ defmodule SymphonyElixir.Config do
 
   @spec linear_endpoint() :: String.t()
   def linear_endpoint do
-    get_in(validated_workflow_options(), [:tracker, :endpoint])
+    get_in(validated_workflow_options(), [:tracker, :endpoint]) || @default_linear_endpoint
   end
 
   @spec linear_api_token() :: String.t() | nil
@@ -217,6 +217,32 @@ defmodule SymphonyElixir.Config do
   @spec linear_terminal_states() :: [String.t()]
   def linear_terminal_states do
     get_in(validated_workflow_options(), [:tracker, :terminal_states])
+  end
+
+  @spec github_token() :: String.t() | nil
+  def github_token do
+    validated_workflow_options()
+    |> get_in([:tracker, :api_key])
+    |> resolve_env_value(System.get_env("GITHUB_TOKEN"))
+    |> normalize_secret_value()
+  end
+
+  @spec github_repo() :: String.t() | nil
+  def github_repo do
+    get_in(validated_workflow_options(), [:tracker, :project_slug])
+  end
+
+  @spec github_endpoint() :: String.t()
+  def github_endpoint do
+    get_in(validated_workflow_options(), [:tracker, :endpoint]) || "https://api.github.com"
+  end
+
+  @spec github_assignee() :: String.t() | nil
+  def github_assignee do
+    validated_workflow_options()
+    |> get_in([:tracker, :assignee])
+    |> resolve_env_value(System.get_env("GITHUB_ASSIGNEE"))
+    |> normalize_secret_value()
   end
 
   @spec poll_interval_ms() :: pos_integer()
@@ -367,6 +393,8 @@ defmodule SymphonyElixir.Config do
          :ok <- require_tracker_kind(),
          :ok <- require_linear_token(),
          :ok <- require_linear_project(),
+         :ok <- require_github_token(),
+         :ok <- require_github_repo(),
          :ok <- require_valid_codex_runtime_settings() do
       require_codex_command()
     end
@@ -390,6 +418,7 @@ defmodule SymphonyElixir.Config do
     case tracker_kind() do
       "linear" -> :ok
       "memory" -> :ok
+      "github" -> :ok
       nil -> {:error, :missing_tracker_kind}
       other -> {:error, {:unsupported_tracker_kind, other}}
     end
@@ -422,6 +451,33 @@ defmodule SymphonyElixir.Config do
         :ok
     end
   end
+
+  defp require_github_token do
+    case tracker_kind() do
+      "github" ->
+        if is_binary(github_token()) do
+          :ok
+        else
+          {:error, :missing_github_token}
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp require_github_repo do
+    case tracker_kind() do
+      "github" -> validate_github_repo(github_repo())
+      _ -> :ok
+    end
+  end
+
+  defp validate_github_repo(repo) when is_binary(repo) do
+    if String.contains?(repo, "/"), do: :ok, else: {:error, :invalid_github_repo}
+  end
+
+  defp validate_github_repo(_), do: {:error, :missing_github_repo}
 
   defp require_codex_command do
     if byte_size(String.trim(codex_command())) > 0 do

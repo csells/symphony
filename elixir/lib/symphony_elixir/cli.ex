@@ -3,7 +3,7 @@ defmodule SymphonyElixir.CLI do
   Escript entrypoint for running Symphony with an explicit WORKFLOW.md path.
   """
 
-  alias SymphonyElixir.LogFile
+  alias SymphonyElixir.{Dotenv, LogFile}
 
   @acknowledgement_switch :i_understand_that_this_will_be_running_without_the_usual_guardrails
   @switches [{@acknowledgement_switch, :boolean}, logs_root: :string, port: :integer]
@@ -54,6 +54,7 @@ defmodule SymphonyElixir.CLI do
   @spec run(String.t(), deps()) :: :ok | {:error, String.t()}
   def run(workflow_path, deps) do
     expanded_path = Path.expand(workflow_path)
+    Dotenv.load_from_workflow_dir(expanded_path)
 
     if deps.file_regular?.(expanded_path) do
       :ok = deps.set_workflow_file_path.(expanded_path)
